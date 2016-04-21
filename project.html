@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Trending Twitter Hashtags</title>
+	<meta charset='utf-8'>
+	<meta name='description' content='A visual of the newest posted songs and their tag affifilations'>
+	<link rel='stylesheet' type='text/css' href='style.css'>
+	<link rel='stylesheet' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css'>
+ 
+	<script src='http://d3js.org/d3.v3.min.js' charset='utf-8'></script>
+</head>
+<style>
+
+</style>
+
+<body>
+	<div class='container'>
+		<div class='page-header'>
+			<img src="images/twitter-128.png" class="image-rounded" id="twitter-icon" alt="">
+			<h1>Twitter Trending #Hashtags</h1>
+		</div>
+	</div>
+	<div class='container'>
+		<div class='row'>
+			<div class='jumbotron' id='jumbotron'>
+				<h3 id='title'>Enter your search below to see a trending graph...</h3>
+				<div id ='loading-icon'>
+					<img src='images/loading.gif' alt="Loading...">
+				</div>
+				<svg id='visualisation' width = '1000' height = '600'></svg>
+			</div>	
+		</div>
+		<div class='row'>
+				<div class='col-md-12'>
+					<form name="form_input">
+						<fieldset>
+							<legend>Input</legend>
+							<label>#<input type='text' id='inp_search' required placeholder='Alphanumeric' name='hashtag' value=''
+							></label>
+							<!-- pattern="/^[a-z0-9]+$/i" -->
+							<label>Number of Recent Tweets: <input type='number'  required id='numTweets' required  placeholder='(1-4000)' name='tweet_number' value=''></label>
+						</fieldset>
+						<!-- onkeypress='return event.charCode >= 48 && event.charCode <= 57' -->
+						<br><br>
+						<fieldset>
+							<legend>Resolution</legend>
+							<label>Minutes <input type='radio' id='rad_mins'  name='resolution' value='min'  checked></label>
+							<label>Hours <input type='radio' id='rad_hours'  name='resolution' value='hour'></label>
+							<label>Days <input type='radio' id='rad_days'  name='resolution' value='day'></label>
+						</fieldset>
+						<button onclick='getInput();' class='btn btn-default' type='button' id='btn_trends'>Get Trends</button>
+					</form>
+				</div>
+		</div>
+	</div>
+
+<script src='oauth-1.0a.js'></script>
+
+<script>
+
+	var rawDates = [];
+	var numTweetsLeft = 0;
+	var numTweetsInput = 0;
+	var visibleData = [];
+	var graphDrawn = false;
+
+	var staticParams = '';
+	var queryCount = 0;
+
+	var dataPulled = false;
+	var isUpdate = false;
+
+  
+  	function validate() {
+    	if (document.form_input.hashtag.value == "") {
+	        document.form_input.hashtag.focus();
+	        return false;
+	    }
+		if (!/^[a-zA-Z0-9]*$/g.test(document.form_input.hashtag.value)) {
+	        
+	        return false;
+	    }
+	    else{
+	    	return true;
+	    }
+	}
+
+	
+	function loadingScreen(isLoading){
+		var duration = 1500;
+		var loadingDiv = document.getElementById('loading-icon');
+		var jumbotron = document.getElementById('jumbotron');
+		if (isLoading){
+			loadingDiv.className = loadingDiv.className ? '' : 'fade';
+			jumbotron.style.backgroundColor = 'black';
+		}
+		else{
+			loadingDiv.className = loadingDiv.className ? '' : 'fade';
+			jumbotron.style.backgroundColor = '#eee';
+		}
+	}
+
+
+	//on radio button click update graph accordingly
+	var rad = document.form_input.resolution;
+	var prev = null;
+
+
+		for (var i=0; i<rad.length; i++){
+			rad[i].onclick = function(){
+				if (this !== prev){
+					prev = this;
+				}
+				if (dataPulled){
+					isUpdate = true;
+					parseDates(this.value);
+				}
+				
+			};
+		}
+
+	/////
+
+	function getInput(){
+
+		//If there is already a graph, clear all the stored data and the graph
+
+		if (dataPulled){
+			d3.selectAll("svg > *").remove();
+			queryCount = 0;
+			dataPulled = false;
+			isUpdate = false;
+			graphDrawn = false;
+			rawDates = [];
+		}
+		numTweetsInput = document.getElementById('numTweets').value;
+		var rawInputParams = document.getElementById('inp_search').value;
+
+		//User side form validation and input encoding
+		if(validate() && rawInputParams && numTweetsInput > 0 && numTweetsInput < 4001){
+			var inputParams = '#' + rawInputParams;
+			numTweetsLeft = numTweetsInput;
+			loadingScreen(true);
+			staticParams = encodeURIComponent(inputParams);
+			pullFromTwitter(staticParams);
+			var title = document.getElementById('title');
+			title.innerHTML = '#' + rawInputParams;
+		}
+		else if(!validate()){
+			alert("Please input alphanumeric characters");
+	        document.form_input.hashtag.focus();
+		}
+		else if (!rawInputParams){
+			alert('Please input a hashtag')
+			document.form_input.hashtag.focus();
+		}
+		else{
+			alert('Please input a number 1-4000');
+			document.form_input.tweet_number.focus();
+		}
+		
+	}
+
+	function pullFromTwitter(params){
+
+		//Pull data from twitter using ajax 
+		var oReq = new XMLHttpRequest(); //New request object
+	    oReq.onload = function() {
+
+	        var parsedData = JSON.parse(this.responseText);
+	        dataPulled = true;
+	        if(parsedData.statuses.length === 0){
+				alert('Search exceeded 7 day Tweet history. Showing ' + rawDates.length + ' tweets.');
+				loadingScreen(false);
+				parseDates(checkInput());
+	        }
+	        else{
+	        	pullDates(parsedData);
+	        }
+	    };
+	    //Pull as many tweets as requested, either 100 (max at a time) or number less than 100
+	    var reqURL = '';
+	    if (numTweetsLeft < 100){
+	    	reqURL = 'backend.php?q=' + params + '&count=' + numTweetsLeft;
+	    	numTweetsLeft = 0;
+	    }
+	    //pull max and subtract that number from number of tweets left to get
+	    else{
+	    	reqURL  = 'backend.php?q=' + params + '&count=100'
+	    	numTweetsLeft -= 100;
+	    }
+	    oReq.open('get', reqURL, true);
+	    oReq.send();
+		console.log('pullFromTwitter with params:' + reqURL);
+
+	}
+
+
+	function reqListener () {
+      console.log(this.responseText);
+    }
+    
+    //appends all the dates of the incoming twitter data to the rawDates array, getting the max_id
+    //for any possible future searchs
+    function pullDates(parsedData){
+    	var max_id = '';
+
+    	for(prop in parsedData){
+
+    		//Get to the meat of the tweet data
+    		if (prop === 'statuses'){
+    			var len = parsedData[prop].length;
+    			var i =0;
+    			parsedData[prop].forEach(function(item, i){
+    				var newDate = new Date(item.created_at)
+					rawDates.push(newDate);
+					if (i === len - 1){
+						//Get last item in parsedData's id for next search
+						max_id = item.id;
+						
+					}
+
+    			});
+    		}
+    	}
+
+    	//Start another search with last tweet being the first of next pull
+    	var newQuery = staticParams + '&max_id=' + max_id;
+
+    	//Make more pulls if necessary
+    	if (numTweetsLeft>0){
+
+    		pullFromTwitter(newQuery);
+    		
+    	}
+    	else{
+    		loadingScreen(false);
+    		parseDates(checkInput());
+    	}
+    }
+
+    function checkInput(){
+    		if(document.getElementById('rad_mins').checked){
+    			return document.getElementById('rad_mins').value;
+    		}
+    		else if(document.getElementById('rad_hours').checked){
+    			return document.getElementById('rad_hours').value;
+    		}
+    		else{
+    			return document.getElementById('rad_days').value;
+    		}
+
+    }
+
+    function parseDates(resValue){  	
+
+    	var data = [];
+
+    		
+    	//Round all the dates to the nearest minute, hour, or day based on user input
+		rawDates.forEach(function(rawDataItem, i){
+
+			var prevTime = '';
+			switch(resValue){
+				case 'min':
+				var currTime = d3.time.minute.floor(rawDataItem);
+	    			if (i>0){
+	    				prevTime = d3.time.minute.floor(rawDates[i-1]);
+	    				//If next data item shares the same minute 
+	    				if (currTime.getTime() === prevTime.getTime()){
+	    					//Look through the data array and add one to the amount 
+							data.forEach(function(dataItem, i){
+		    					if (dataItem.time.getTime() === currTime.getTime()){
+		    						dataItem.amt++;
+		    					}
+		    				});
+	     				
+		    			}
+		    			else{
+							data.push({
+							time: currTime,
+							amt: 1
+		    				});
+		    			}	
+	    			}
+	    			else{
+						data.push({
+						time: currTime,
+						amt: 1
+	    				});
+	    			}
+	    			break;
+	    		case 'hour':
+					var currTime = d3.time.hour.floor(rawDataItem);
+	    			if (i>0){
+	    				prevTime = d3.time.hour.floor(rawDates[i-1]);
+	    				//If next data item shares the same minute 
+	    				if (currTime.getTime() === prevTime.getTime()){
+	    					//Look through the data array and add one to the amount 
+							data.forEach(function(dataItem, i){
+		    					if (dataItem.time.getTime() === currTime.getTime()){
+		    						dataItem.amt++;
+		    					}
+		    				});
+	     				
+		    			}
+		    			else{
+							data.push({
+							time: currTime,
+							amt: 1
+		    				});
+		    			}	
+	    			}
+	    			else{
+						data.push({
+						time: currTime,
+						amt: 1
+	    				});
+	    			}
+	    			break;
+	    		case 'day':
+					var currTime = d3.time.day.floor(rawDataItem);
+	    			if (i>0){
+	    				prevTime = d3.time.day.floor(rawDates[i-1]);
+	    				//If next data item shares the same minute 
+	    				if (currTime.getTime() === prevTime.getTime()){
+	    					//Look through the data array and add one to the amount 
+							data.forEach(function(dataItem, i){
+		    					if (dataItem.time.getTime() === currTime.getTime()){
+		    						dataItem.amt++;
+		    					}
+		    				});
+	     				
+		    			}
+		    			else{
+							data.push({
+							time: currTime,
+							amt: 1
+		    				});
+		    			}	
+	    			}
+	    			else{
+						data.push({
+						time: currTime,
+						amt: 1
+	    				});
+	    			}
+	    			break;
+	    		default: break;
+			}
+
+			
+		})
+		visibleData = data;
+		if (data.length === 1){
+			var title = document.getElementById('title').innerHTML;
+			var time = data[0].time;
+			switch(resValue) {
+				case 'min':
+					var format = d3.time.format("%H:%M")
+					alert("All " + numTweetsInput  + ' ' + title + " tweets occurred at " + format(time) + "!");
+				break;
+				case 'hour':
+					var format = d3.time.format("%H");
+					alert("All " + numTweetsInput  + ' ' + title + " tweets occurred during " + format(time) + ":00!");
+					break;
+				case 'day':
+					var format = d3.time.format("%B %d");
+					alert("All " + numTweetsInput  + ' ' +title + " tweets occurred on " + format(time) + "!");
+					break;
+				default: break;
+			}
+
+		}
+		else if (!isUpdate){
+			graph(data, resValue);
+		}
+		else{
+			updateGraph(data, resValue);
+		}
+
+
+	}
+   
+
+
+    ////////////////////////////////////////////////////////
+    //					Graphing Functions				//
+    // ////////////////////////////////////////////////////			
+
+    function graph(data, timeScale){
+
+    	var vis = d3.select('#visualisation'),
+	    WIDTH = 1000,
+	    HEIGHT = 500,
+	    MARGINS = {
+	        top: 40,
+	        right: 20,
+	        bottom: 40,
+	        left: 100
+	    },
+
+	//Find max and min values of data
+	yDomain = d3.extent(data, function(d){return Number(d.amt)});
+	xDomain = d3.extent(data, function(d){return d.time});
+
+	//Scale the axes according to max and min values
+	yScale = d3.scale.linear().range([HEIGHT - MARGINS.top, MARGINS.bottom]);
+	xScale = d3.time.scale().range([MARGINS.left, WIDTH - MARGINS.right]);
+
+	yScale.domain(yDomain);
+	xScale.domain(xDomain);
+	
+	//scale axes with proper scale, orientation, and position 
+	dateFormat = d3.time.format('%a %H:%M');
+	xAxis = d3.svg.axis()
+		.scale(xScale)
+		.tickFormat(dateFormat);
+
+	yAxis = d3.svg.axis()
+		.scale(yScale)
+		.orient('left');
+
+    	//Add the axes
+	vis.append('svg:g')
+		.attr('class', 'xaxis axis')
+		.attr('transform', 'translate(0,' + (HEIGHT - MARGINS.bottom) + ')')
+		.call(xAxis);
+
+
+	vis.append('svg:g')
+		.attr('class', 'yaxis axis')
+	    .attr('transform', 'translate(' + (MARGINS.left) + ',0)')
+	    .call(yAxis);
+
+	    vis.selectAll(".xaxis text")  // select all the text elements for the xaxis
+	      .attr("transform", function(d) {
+	         return "translate(" + this.getBBox().height*-2 + "," + this.getBBox().height + ")rotate(-45)";
+	     });
+
+
+	  //Add a fill under the line
+	 var area = d3.svg.area()
+	    .x(function(d) { return xScale(d.time); })
+	    .y0(HEIGHT - MARGINS.bottom)
+	    .y1(function(d) { return yScale(d.amt); })
+	    .interpolate('basis');
+
+	  vis.append("path")
+        .datum(data)
+        .attr("class", "area")
+        .attr("d", area);
+
+   
+	 var xAxisLabelString = function(){
+			switch(timeScale) {
+				case 'min':
+					return 'Time(minute resolution)';
+					break;
+				case 'hour':
+					return 'Time(hour resolution)';
+					break;
+				case 'day':
+					return 'Day';
+					break;
+				default: break;
+
+			}
+	};
+
+	//Add y and x axis labels
+	vis.append('text')
+            .attr('text-anchor', 'middle')  // this makes it easy to centre the text as the transform is applied to the anchor
+            .attr('transform', 'translate('+ (MARGINS.left/2) +','+(HEIGHT/2)+')rotate(-90)')  // text is drawn off the screen top left, move down and out and rotate
+            .text('Number of Tweets');
+
+     var xAxisLabel = vis.append('text')
+			     	.attr('class', 'text')
+            		.attr('text-anchor', 'middle')  // this makes it easy to centre the text as the transform is applied to the anchor
+          			 .attr('transform', 'translate('+ (WIDTH/2) +','+(HEIGHT+(MARGINS.bottom/1.5))+')')  // centre below axis
+           			 .text(xAxisLabelString);
+
+
+	//define line
+	var line = d3.svg.line()
+		.x(function(d){
+			return xScale(d.time);
+
+		})
+		.y(function(d){
+			return yScale(d.amt);
+		})
+		.interpolate('basis');
+
+		//add line
+		vis.append('svg:path')
+			.attr('class', 'line')
+			.attr('d', line(data))
+			.attr('stroke', '#55acee')
+			.attr('stroke-width', 2)
+			.attr('fill', 'none');
+
+		graphDrawn = true;
+    }
+
+
+
+    //Updates the graph with data
+    function updateGraph(graphData, timeScale){
+
+    	WIDTH = 1000;
+	    HEIGHT = 500;
+	    MARGINS = {
+	        top: 40,
+	        right: 20,
+	        bottom: 40,
+	        left: 100
+	    };
+
+    	yDomain = d3.extent(graphData, function(d){return Number(d.amt)});
+		xDomain = d3.extent(graphData, function(d){return d.time})
+	
+
+		//If the graph hasn't been created yet, create one.
+		if(!graphDrawn){
+			graph(graphData,timeScale)
+		}
+		else{
+
+			yScale.domain(yDomain);
+			xScale.domain(xDomain);
+
+			vis = d3.select('#visualisation').transition();
+			//add axes with proper scale, orientation, and position 
+
+			var line = d3.svg.line()
+			.x(function(d){
+				return xScale(d.time);
+
+			})
+			.y(function(d){
+				return yScale(d.amt);
+			})
+			.interpolate('basis');
+
+			var xAxisLabelString = function(){
+
+				switch(timeScale) {
+					case 'min':
+						return 'Time (minute resolution)';
+						break;
+					case 'hour':
+						return 'Time (hour resolution)';
+						break;
+					case 'day':
+						return 'Day';
+						break;
+					default: break;
+
+				}
+			}
+
+			var newArea = d3.svg.area()
+		    .x(function(d) { return xScale(d.time); })
+		    .y0(HEIGHT - MARGINS.bottom)
+		    .y1(function(d) { return yScale(d.amt); })
+		    .interpolate('basis');
+			
+			vis.select('.line')
+				.duration(750)
+				.attr('d', line(graphData))
+			vis.select('.xaxis')
+				.duration(750)
+				.call(xAxis);
+			vis.select('.yaxis')
+				.duration(750)
+				.call(yAxis);
+			vis.select('.area')
+				.duration(750)
+				.attr("d", newArea(graphData))
+			vis.select('.text')
+				.duration(750)
+				.text(xAxisLabelString)
+
+		}
+
+    }
+
+
+</script>
+</body>
+</html>

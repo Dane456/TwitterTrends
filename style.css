@@ -1,0 +1,86 @@
+
+.container{
+	width: 1170px !important;
+}
+.jumbotron p{
+	text-align: center;
+}
+.trends{
+	margin: 30px auto;
+}
+#btn_trends{
+	margin: 20px auto;
+	width: 100%;
+}
+input{
+	margin: 10px;
+}
+label{
+	margin: 10px;
+}
+#title{
+	display: block;
+	text-align: center;
+}
+h1{
+	display: inline-block;
+	vertical-align: bottom;
+}
+#twitter-icon{
+	height: 64px;
+	width: auto;
+	display: inline-block;
+
+}
+.area{
+	fill: #55acee;
+	stroke-width: 0;
+}
+.axis path {
+    fill: none;
+    stroke: #777;
+    shape-rendering: crispEdges;
+}
+.axis text {
+    font-family: Lato;
+    font-size: 13px;
+}
+#visualisation{
+	position: absolute;
+	top: 200px;
+	z-index: 0;
+}
+#loading-icon{
+	opacity: 0;
+	left: 0px
+	right 0px;
+	bottom: 0px;
+	top: 0px;
+	transition: opacity .5s ease-in-out;
+	text-align: center;
+	background-color: black;
+	position: relative;
+	margin: 0 auto;
+	width: 100%;
+	height: 100%;
+	z-index: 1;
+
+}
+form {
+	text-align: center;
+}
+#btn_trends{
+	background-color: #55acee;
+	color: white;
+	font-family: Avenir, sans-serif;
+/*	border-style: none;*/
+
+}
+
+#loading-icon.fade {
+	opacity: 1;
+	background-color: black;
+}
+.black_background{
+}
+
